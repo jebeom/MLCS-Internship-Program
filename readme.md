@@ -17,6 +17,7 @@ Lab website: [MLCS][mlcs_link]
 2. Neural Networks
 3. Control Theory
 4. Reinforcement Learning
+5. Model Predictive Control
 
 * * *
 
