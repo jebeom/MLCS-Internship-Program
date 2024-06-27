@@ -100,7 +100,7 @@ with torch.no_grad():
 
     print(f'Test Accuracy of the model on the {total} test images: {100 * correct / total}%')
 
-    # Plot the collected examplesx``
+    # Plot the collected examples
     fig, axes = plt.subplots(4, 4, figsize=(12, 12))
     for i, (image, label, prediction) in enumerate(examples):
         image = image.squeeze().numpy() * 0.5 + 0.5  # unnormalize the image

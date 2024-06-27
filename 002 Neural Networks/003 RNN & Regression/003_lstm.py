@@ -1,77 +1,117 @@
 #==========================================#
 # Title:  Stock prices prediction with LSTM
-# Author: Bogyeong Suh
-# Date:   2023-02-03
+# Author: Jaewoong Han
+# Date:   2024-06-05
 #==========================================#
 import math
-import yfinance as yf
 import numpy as np
-from pandas_datareader import data as pdr 
-from sklearn.preprocessing import MinMaxScaler 
+import pandas as pd
+import yfinance as yf
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+import torch
+import torch.nn as nn
+from torch.autograd import Variable
 
-yf.pdr_override()
-df = pdr.get_data_yahoo('SBUX', start='2018-01-01', end='2022-12-31')
+"""
+Objective: Predict Stock market price
+ - Input: Close prices -> input_dim == 1
+ - Output: Close price -> features == 1 / output_dim == 1
+"""
+#Download data from yfinance library
+def download_data(ticker, start, end):
+    yf.pdr_override()
+    df = yf.download(ticker, start=start, end=end)
+    print("="*50)
+    print("Dataset summarize")
+    print(df.describe())
+    print("="*50)
+    return df
 
-close_prices = df['Close']
-values = close_prices.values
-training_data_len = math.ceil(len(values)* 0.8)
+# Data preprocessing
+def preprocess_data(df):
+    close_prices = df['Close'].values.reshape(-1, 1)  # Use close price only
+    scaler = MinMaxScaler(feature_range=(0, 1))  # scale data to range 0-1
+    scaled_data = scaler.fit_transform(close_prices)
 
-scaler = MinMaxScaler(feature_range=(0,1))
-scaled_data = scaler.fit_transform(values.reshape(-1,1))
-train_data = scaled_data[0: training_data_len, :]
+    return scaled_data, scaler
 
-x_train = []
-y_train = []
+# Create dataset
+def create_dataset(data, time_step):
+    x, y = [], []
+    for i in range(time_step, len(data)):
+        x.append(data[i - time_step:i, 0])
+        y.append(data[i, 0])
+    x, y = np.array(x), np.array(y)
+    x = np.reshape(x, (x.shape[0], x.shape[1], 1))  # reshape to [samples, time steps, features]
+    return x, y
 
-days = 60 #length of a data
-bs = 30 #batch_size
-epoch = 20 #epoch
+# Get and preprocess data
+df = download_data('SBUX', '2019-01-01', '2023-12-31')
+scaled_data, scaler = preprocess_data(df)
 
+# Split data into train and test sets
+train_data, test_data = train_test_split(scaled_data, test_size=0.2, shuffle=False)
 
-for i in range(days, len(train_data)):
-    x_train.append(train_data[i-days:i, 0])
-    y_train.append(train_data[i, 0])
-    
-x_train, y_train = np.array(x_train), np.array(y_train)
-#Reshaping the train data to make it as input for LSTM layer input_shape(batchsize, timesteps, input_dim)
-x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+# Create train and test datasets
+time_step = 60
+x_train, y_train = create_dataset(train_data, time_step)
+x_test, y_test = create_dataset(test_data, time_step)
 
-test_data = scaled_data[training_data_len-days:, :]
-x_test = []
-y_test = values[training_data_len:]
+# Define LSTM model
+class LSTMModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_layers, output_dim):
+        super(LSTMModel, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_dim, output_dim)
 
-for i in range(days, len(test_data)):
-    x_test.append(test_data[i-days:i, 0])
-    
-x_test = np.array(x_test)
-x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+    def forward(self, x):
+        h0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_dim))
+        c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_dim))
+        out, _ = self.lstm(x, (h0, c0)) # LSTM forward pass
+        out = self.fc(out[:, -1, :]) # get output from the last time step
+        return out
 
+# Initialize and set up model for training
+model = LSTMModel(input_dim=1, hidden_dim=50, num_layers=1, output_dim=1)
+criterion = torch.nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-model = Sequential()
-model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
-model.add(LSTM(50, return_sequences=False))
-model.add(Dense(25))
-model.add(Dense(1))
-model.summary()
-model.compile(optimizer='adam', loss='mean_squared_error')
-model.fit(x_train, y_train, batch_size=bs, epochs=epoch)
+# Train the model
+model.train()
+for epoch in range(20):
+    for i in range(len(x_train)):
+        inputs = Variable(torch.from_numpy(x_train[i].astype(np.float32)).unsqueeze(0))
+        labels = Variable(torch.from_numpy(np.array([y_train[i]]).astype(np.float32)).unsqueeze(1))
 
-predictions = model.predict(x_test)
-predictions = scaler.inverse_transform(predictions)
-rmse = np.sqrt(np.mean(predictions - y_test)**2)
+        optimizer.zero_grad() # clear previous gradients
+        outputs = model(inputs)
+        loss = criterion(outputs, labels) # compute loss
+        loss.backward()  # backpropagate the error
+        optimizer.step()  # update model parameters
+
+# Make predictions
+model.eval()
+x_test_tensor = Variable(torch.from_numpy(x_test.astype(np.float32)))
+predicted_stock_price = model(x_test_tensor)
+predicted_stock_price = scaler.inverse_transform(predicted_stock_price.detach().numpy())
+
+# Calculate RMSE
+rmse = np.sqrt(np.mean(np.square(predicted_stock_price - y_test.reshape(-1,1))))
 print(rmse)
 
-#for plotting
-GT = df[training_data_len:]
-GT['Predictions'] = predictions
+# Plot the results
+predicted_prices = pd.DataFrame(data={'Predictions': predicted_stock_price.flatten()})
+GT = df.iloc[len(df) - len(predicted_prices):]
+GT['Predictions'] = predicted_prices['Predictions'].values
 
 plt.figure()
-plt.title('Result')
-plt.xlabel('Date')
-plt.ylabel('Close prise USD ($)')
 plt.plot(GT[['Close', 'Predictions']])
+plt.title('Stock Price Prediction')
+plt.xlabel('Date')
+plt.ylabel('Close Price USD ($)')
 plt.legend(['Ground Truth', 'Predictions'], loc='lower right')
 plt.show()
