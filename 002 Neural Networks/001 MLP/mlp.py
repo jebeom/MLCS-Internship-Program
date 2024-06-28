@@ -1,3 +1,8 @@
+#==========================================#
+# Title:  Image classification with MLP
+# Author: Jaewoong Han
+# Date:   2024-06-28
+#==========================================#
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -6,7 +11,7 @@ import matplotlib.pyplot as plt
 
 batch_size = 128
 num_classes = 10 # datasets have image file of number 0 to 9
-epochs = 5
+epochs = 15
 
 """
 Step1: load datasets
@@ -18,13 +23,12 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-train_dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
-test_dataset = datasets.MNIST(root='./data', train=False, transform=transform, download=True)
+train_dataset = datasets.MNIST(root='../data', train=True, transform=transform, download=True)
+test_dataset = datasets.MNIST(root='../data', train=False, transform=transform, download=True)
 
 train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
 
-# Print the shape of the images and labels
 for images, labels in train_loader:
     print(f"Shape of images: {images.shape}") # (128, 1, 28, 28)
     print(f"Shape of labels: {labels.shape}") # 128
@@ -71,7 +75,7 @@ for epoch in range(epochs):
         optimizer.step()
         
         if (i+1) % 100 == 0:
-            print(f'Epoch [{epoch+1}/{epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss.item():.4f}')
+            print(f'Epoch [{str(epoch+1).zfill(2)}/{epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
 """
 Step4: test the model
@@ -80,17 +84,15 @@ model.eval()
 with torch.no_grad():
     correct = 0
     total = 0
-    # To store a few test images for visualization
     examples = []
     num_examples = 16
 
     for images, labels in test_loader:
         outputs = model(images)
-        _, predicted = torch.max(outputs.data, 1) # torch.max returns (max,index) 
+        _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-        # Collect some examples to visualize
         if len(examples) < num_examples:
             for i in range(len(labels)):
                 if len(examples) < num_examples:
@@ -100,10 +102,9 @@ with torch.no_grad():
 
     print(f'Test Accuracy of the model on the {total} test images: {100 * correct / total}%')
 
-    # Plot the collected examples
     fig, axes = plt.subplots(4, 4, figsize=(12, 12))
     for i, (image, label, prediction) in enumerate(examples):
-        image = image.squeeze().numpy() * 0.5 + 0.5  # unnormalize the image
+        image = image.squeeze().numpy() * 0.5 + 0.5
         ax = axes[i // 4, i % 4]
         ax.imshow(image, cmap='gray')
         ax.set_title(f'True: {label.item()}\nPred: {prediction.item()}', fontsize=12)
