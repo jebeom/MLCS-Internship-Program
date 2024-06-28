@@ -1,75 +1,69 @@
 #==========================================#
-# Title:  Data Loader
-# Author: Hwanmoo Yong
-# Date:   2021-01-17
+# Title:  Image classification with CNN
+# Author: Jaewoong Han
+# Date:   2024-06-27
 #==========================================#
-from data_loader import DataLoader
-from cnn_network import RoadClassificationModel
-from keras.callbacks import EarlyStopping, ModelCheckpoint, CSVLogger, ReduceLROnPlateau, Callback, TensorBoard
+import torch
+import torch.nn as nn
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
+from cnn_network import CNN
 
-import sys
-import numpy as np
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-import os
-if not os.path.exists('./models'):
-    os.makedirs('./models')
+batch_size = 100
+learning_rate = 0.0002
+num_epoch = 15
 
-data_type = "CNN"
-batch_size = 4048
+mnist_train = datasets.MNIST(root="../data/", train=True, transform=transforms.ToTensor(), target_transform=None, download=True)
+mnist_test = datasets.MNIST(root="../data/", train=False, transform=transforms.ToTensor(), target_transform=None, download=True)
 
-def split(flag, d):
-    train_idx = int(d.shape[0]*0.7)
-    eval_idx = int(d.shape[0]*0.9)
+train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True)
+test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False, drop_last=True)
 
-    if flag == "train":
-        return d[0:train_idx]
-    elif flag == "val":
-        return d[train_idx:eval_idx]
-    elif flag == "test":
-        return d[eval_idx:]
+model = CNN(batch_size=batch_size).to(device)
+loss_func = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-def main(window_size):
-    dl = DataLoader()
-    
-    # Create NPZ from csv raw dataset
-    # dl.create()
+loss_arr =[]
+for i in range(num_epoch):
+    epoch_loss = 0
+    corrects = 0
+    total = 0
+    for j,[image,label] in enumerate(train_loader):
+        x = image.to(device)
+        y= label.to(device)
+        
+        optimizer.zero_grad()
+        
+        output = model.forward(x)
+        
+        loss = loss_func(output,y)
+        loss.backward()
+        optimizer.step()
 
-    # Load and Create windowed NPZ
-    # d = dl.read(window_size=int(window_size))
+        epoch_loss += loss.item()
+        _, predicted = torch.max(output, 1)
+        corrects += (predicted == y).sum().item()
+        total += y.size(0)
 
-    # Load windowed dataset
-    d = dl.load(window_size=int(window_size))
+    epoch_loss /= len(train_loader)
+    epoch_acc = corrects / total * 100
+    print(f"epoch: [{str(i+1).zfill(2)}/{num_epoch}], Loss: {epoch_loss:.5f}, Accuracy: {epoch_acc:.5f}")
 
-    rm = RoadClassificationModel(time_window=int(window_size))
-    model = rm.build()
+correct = 0
+total = 0
+model.eval()
 
-    x_train = [
-                split("train",d['ba']).reshape(-1,int(window_size),1),
-                split("train",d['u']),
-                split("train",d['K_seq'])
-            ]
-    y_train = [split("train",d['a']),split("train",d['K'])]
+with torch.no_grad():
+    for image,label in test_loader:
+        x, y = image.to(device), label.to(device)
+        output = model.forward(x)
 
-    x_val = [
-                split("val",d['ba']).reshape(-1,int(window_size),1),
-                split("val",d['tire_stft']).reshape(-1,25,21,1),
-                split("val",d['K_seq'])
-            ]
-    y_val = [split("val",d['a']),split("val",d['K'])]
+        _,output_index = torch.max(output,1)
 
-    if not os.path.exists('./models/'+sys.argv[2] + '_'  +  data_type):
-        os.makedirs('./models/'+sys.argv[2] + '_'  +  data_type)
+        total += label.size(0)
+        correct += (output_index == y).sum().float()
 
-    earlyStopping = EarlyStopping(monitor='val_loss', patience=21, verbose=0, mode='min')
-    checkpointer = ModelCheckpoint(monitor='val_loss', filepath='./models/'+sys.argv[2] + '_' + data_type+'/{epoch:02d}-{val_loss:.2f}.hdf5', verbose=1, save_best_only=True)
-    rl_scheduler = ReduceLROnPlateau(monitor='val_loss', factor=0.05, patience=10, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0)
-    csv_logger = CSVLogger('./models/'+sys.argv[2] + '_'  +  data_type+'/result.csv')
-
-    model.fit(x_train, y_train,
-            batch_size=batch_size, epochs=10000,
-            validation_data=(x_val, y_val),
-            shuffle=True,
-            callbacks=[earlyStopping, checkpointer, rl_scheduler, csv_logger])
-
-if __name__=="__main__":
-    main(sys.argv[1])
+    print(f"Accuracy of Test Data: {100*correct/total:.5f}%")
