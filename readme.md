@@ -15,9 +15,9 @@ Lab website: [MLCS][mlcs_link]
 
 1. Basic Python Programming
 2. Neural Networks
-3. Control Theory
+3. Optimal Control
 4. Reinforcement Learning
-5. Model Predictive Control
+5. Mobile Robot
 
 * * *
 
