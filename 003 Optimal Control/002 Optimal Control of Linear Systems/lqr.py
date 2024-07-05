@@ -35,11 +35,12 @@ xref = np.array([0.5, 1.0, 0.0, 0.0])
 sol = solve_ivp(
     lambda t, x: A @ x + B @ K @ (xref - x),  # closed loop system
     (0.0, 5.0),  # simulation time interval
-    x0  # initial state
+    x0,  # initial state
+    t_eval=np.linspace(0.0, 5.0, 501)
 )
 
 # discrete-time system
-Ts = 0.02  # sampling time
+Ts = 0.05  # sampling time
 Ad, Bd, _, _, _ = cont2discrete((A, B, np.eye(n), np.zeros_like(B)), Ts)
 
 # discrete-time lqr
