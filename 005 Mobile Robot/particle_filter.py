@@ -14,7 +14,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils.angle import rot_mat_2d
+from scipy.spatial.transform import Rotation as Rot
 
 # Estimation parameter of PF
 Q = np.diag([0.2]) ** 2  # range error
@@ -34,6 +34,25 @@ NTh = NP / 2.0  # Number of particle for re-sampling
 
 show_animation = True
 
+def rot_mat_2d(angle):
+    """
+    Create 2D rotation matrix from an angle
+
+    Parameters
+    ----------
+    angle :
+
+    Returns
+    -------
+    A 2D rotation matrix
+
+    Examples
+    --------
+    >>> angle_mod(-4.0)
+
+
+    """
+    return Rot.from_euler('z', angle).as_matrix()[0:2, 0:2]
 
 def calc_input():
     v = 1.0  # [m/s]
