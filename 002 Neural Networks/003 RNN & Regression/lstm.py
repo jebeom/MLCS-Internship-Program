@@ -24,6 +24,8 @@ ticker = "SBUX"
 Step1: Preprocess Datasets
 """
 data = yf.download(ticker, start="2020-01-01", end="2023-12-31")
+# 데이터의 첫 몇 행을 출력하여 구조를 확인
+print(data.head())
 data = data['Close'].values.reshape(-1, 1)
 input_size = data.shape[1]
 
@@ -88,6 +90,7 @@ model.train()
 for epoch in range(epochs):
     train_loss = 0.0
     for sequences, targets in train_loader:
+        print(targets)
         outputs = model(sequences)
         loss = criterion(outputs, targets)
         

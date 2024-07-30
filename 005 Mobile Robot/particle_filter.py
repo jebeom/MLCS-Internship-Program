@@ -3,7 +3,8 @@
 Particle Filter localization sample
 
 author: Atsushi Sakai (@Atsushi_twi)
-
+editor: Jebeom Chae
+Task  : Implement a Particle Filter assuming that data is received from GPS sensors instead of RFID sensors
 """
 import sys
 import pathlib
@@ -14,14 +15,17 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 
+from scipy.stats import multivariate_normal
 from scipy.spatial.transform import Rotation as Rot
 
+gps_cov = np.diag([1.0,1.0]) ** 2 
+
 # Estimation parameter of PF
-Q = np.diag([0.2]) ** 2  # range error
+Q = np.diag([0.2,0.2]) ** 2  # range error
 R = np.diag([2.0, np.deg2rad(40.0)]) ** 2  # input error
 
 #  Simulation parameter
-Q_sim = np.diag([0.2]) ** 2
+Q_sim = np.diag([0.2,0.2]) ** 2
 R_sim = np.diag([1.0, np.deg2rad(30.0)]) ** 2
 
 DT = 0.1  # time tick [s]
@@ -61,21 +65,34 @@ def calc_input():
     return u
 
 
-def observation(x_true, xd, u, rf_id):
+def observation(x_true, xd, u):
+    # x_true = motion_model(x_true, u)
+
+    ## add noise to gps x-y
+    # z = np.zeros((0, 3))
+
+    # for i in range(len(rf_id[:, 0])):
+
+    #     dx = x_true[0, 0] - rf_id[i, 0]
+    #     dy = x_true[1, 0] - rf_id[i, 1]
+    #     d = math.hypot(dx, dy)
+    #     if d <= MAX_RANGE:
+    #         dn = d + np.random.randn() * Q_sim[0, 0] ** 0.5  # add noise
+    #         zi = np.array([[dn, rf_id[i, 0], rf_id[i, 1]]])
+    #         z = np.vstack((z, zi))
+
+    # # add noise to input
+    # ud1 = u[0, 0] + np.random.randn() * R_sim[0, 0] ** 0.5
+    # ud2 = u[1, 0] + np.random.randn() * R_sim[1, 1] ** 0.5
+    # ud = np.array([[ud1, ud2]]).T
+
+    # xd = motion_model(xd, ud)
+
     x_true = motion_model(x_true, u)
 
-    # add noise to gps x-y
-    z = np.zeros((0, 3))
-
-    for i in range(len(rf_id[:, 0])):
-
-        dx = x_true[0, 0] - rf_id[i, 0]
-        dy = x_true[1, 0] - rf_id[i, 1]
-        d = math.hypot(dx, dy)
-        if d <= MAX_RANGE:
-            dn = d + np.random.randn() * Q_sim[0, 0] ** 0.5  # add noise
-            zi = np.array([[dn, rf_id[i, 0], rf_id[i, 1]]])
-            z = np.vstack((z, zi))
+    z = np.zeros((1, 2))
+    z[0, 0] = x_true[0, 0] + np.random.randn() * Q_sim[0, 0] ** 0.5  # x position with noise
+    z[0, 1] = x_true[1, 0] + np.random.randn() * Q_sim[1, 1] ** 0.5  # y position with noise
 
     # add noise to input
     ud1 = u[0, 0] + np.random.randn() * R_sim[0, 0] ** 0.5
@@ -84,7 +101,9 @@ def observation(x_true, xd, u, rf_id):
 
     xd = motion_model(xd, ud)
 
+
     return x_true, z, xd, ud
+
 
 
 def motion_model(x, u):
@@ -103,11 +122,6 @@ def motion_model(x, u):
     return x
 
 
-def gauss_likelihood(x, sigma):
-    p = 1.0 / math.sqrt(2.0 * math.pi * sigma ** 2) * \
-        math.exp(-x ** 2 / (2 * sigma ** 2))
-
-    return p
 
 
 def calc_covariance(x_est, px, pw):
@@ -130,24 +144,28 @@ def pf_localization(px, pw, z, u):
     Localization with Particle filter
     """
 
+    mean = np.array([0, 0])
+    gps_covariance = gps_cov  
+
     for ip in range(NP):
         x = np.array([px[:, ip]]).T
         w = pw[0, ip]
+        gaussian_pdf = multivariate_normal(mean, gps_covariance)
 
-        #  Predict with random input sampling
+        # Predict with random input sampling
         ud1 = u[0, 0] + np.random.randn() * R[0, 0] ** 0.5
         ud2 = u[1, 0] + np.random.randn() * R[1, 1] ** 0.5
         ud = np.array([[ud1, ud2]]).T
         x = motion_model(x, ud)
 
-        #  Calc Importance Weight
-        for i in range(len(z[:, 0])):
-            dx = x[0, 0] - z[i, 1]
-            dy = x[1, 0] - z[i, 2]
-            pre_z = math.hypot(dx, dy)
-            dz = pre_z - z[i, 0]
-            w = w * gauss_likelihood(dz, math.sqrt(Q[0, 0]))
+        # Calc Importance Weight
+        dx = x[0, 0] - z[0, 0]
+        dy = x[1, 0] - z[0, 1]
+        pos_diff = np.array([dx, dy])
+        # update weight
+        w = w * gaussian_pdf.pdf(pos_diff)
 
+        # particle update
         px[:, ip] = x[:, 0]
         pw[0, ip] = w
 
@@ -223,11 +241,11 @@ def main():
 
     time = 0.0
 
-    # RF_ID positions [x, y]
-    rf_id = np.array([[10.0, 0.0],
-                      [10.0, 10.0],
-                      [0.0, 15.0],
-                      [-5.0, 20.0]])
+    # # RF_ID positions [x, y]
+    # rf_id = np.array([[10.0, 0.0],
+    #                   [10.0, 10.0],
+    #                   [0.0, 15.0],
+    #                   [-5.0, 20.0]])
 
     # State Vector [x y yaw v]'
     x_est = np.zeros((4, 1))
@@ -246,7 +264,7 @@ def main():
         time += DT
         u = calc_input()
 
-        x_true, z, x_dr, ud = observation(x_true, x_dr, u, rf_id)
+        x_true, z, x_dr, ud = observation(x_true, x_dr, u)
 
         x_est, PEst, px, pw = pf_localization(px, pw, z, ud)
 
@@ -262,9 +280,9 @@ def main():
                 'key_release_event',
                 lambda event: [exit(0) if event.key == 'escape' else None])
 
-            for i in range(len(z[:, 0])):
-                plt.plot([x_true[0, 0], z[i, 1]], [x_true[1, 0], z[i, 2]], "-k")
-            plt.plot(rf_id[:, 0], rf_id[:, 1], "*k")
+            # for i in range(len(z[:, 0])):
+            #     plt.plot([x_true[0, 0], z[i, 1]], [x_true[1, 0], z[i, 2]], "-k")
+            # plt.plot(rf_id[:, 0], rf_id[:, 1], "*k")
             plt.plot(px[0, :], px[1, :], ".r")
             plt.plot(np.array(h_x_true[0, :]).flatten(),
                      np.array(h_x_true[1, :]).flatten(), "-b")
